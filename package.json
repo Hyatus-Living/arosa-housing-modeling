@@ -1,0 +1,15 @@
+{
+  "name": "arosa-hackathon-extraction",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Public extraction of Arosa's Meta hackathon housing-modeling work. See README.md, CONTRIBUTIONS.md and LICENSES.md.",
+  "scripts": {
+    "test": "node --test acres-research/meta-visual.test.mjs app-starter/tests/nyc-address.test.mjs app-starter/tests/architecture-model.test.mjs app-starter/tests/black-frame.test.mjs app-starter/tests/context-recovery.test.mjs app-starter/tests/interior-layout.test.mjs app-starter/tests/photo-scene.test.mjs"
+  },
+  "dependencies": {
+    "@meta-sam/parser": "0.1.0",
+    "ipaddr.js": "2.5.0",
+    "three": "^0.186.1"
+  }
+}
