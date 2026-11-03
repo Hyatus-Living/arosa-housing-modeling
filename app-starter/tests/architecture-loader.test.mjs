@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BoxGeometry, Group, Mesh, MeshStandardMaterial} from 'three';
-import {loadArchitectureModel,setSpaceShellVisible} from '../frontend/architecture-loader.mjs';
+import {dollhouseMeshVisible,loadArchitectureModel,setSpaceShellVisible} from '../frontend/architecture-loader.mjs';
 import {selectionIndex} from '../frontend/architecture-model.mjs';
+
+test('dollhouse removes an overhead IFC slab while keeping the selected floor and walls',()=>{
+  const index=selectionIndex({objects:[{glbNodeName:'cap',kind:'slab'},{glbNodeName:'base',kind:'slab'},{glbNodeName:'wall',kind:'wall'}],collision:{walls:[],floors:[]}});
+  const make=(node,y,level='ground')=>{
+    const mesh=new Mesh(new BoxGeometry(10,.2,8));mesh.position.y=y;
+    mesh.userData={node,levelId:level};mesh.updateMatrixWorld(true);return mesh;
+  };
+  const heights=new Map([['ground',0],['upper',3]]);
+  assert.equal(dollhouseMeshVisible(make('cap',2.7),index,heights,0),false);
+  assert.equal(dollhouseMeshVisible(make('base',-.1),index,heights,0),true);
+  assert.equal(dollhouseMeshVisible(make('wall',1.4),index,heights,0),true);
+  assert.equal(dollhouseMeshVisible(make('base',2.9,'upper'),index,heights,0),false);
+  assert.equal(dollhouseMeshVisible(make('base',2.9,'upper'),index,heights,3),true);
+});
 
 test('unstyled IFC surfaces are readable without changing authored materials or hiding room contents',async()=>{
   const scene=new Group(),associations=new Map();

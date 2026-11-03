@@ -36,7 +36,7 @@ function ArchitectureView({plan, glbUrl, manifestUrl, onSelect, root, startedAt}
   const stops = useMemo(() => cameraStops(plan, {eyeHeight: state.eyeHeight}), [plan, state.eyeHeight]);
   const [walker, setWalker] = useState(null);
   const [furnished, setFurnished] = useState(true);
-  const [detailedLighting,setDetailedLighting]=useState(true);
+  const [detailedLighting,setDetailedLighting]=useState(false);
   const [lightingUnavailable,setLightingUnavailable]=useState(false);
   const lightingFailed=useCallback(()=>{setDetailedLighting(false);setLightingUnavailable(true);},[]);
   const [check, setCheck] = useState(false);
@@ -101,11 +101,12 @@ function ArchitectureView({plan, glbUrl, manifestUrl, onSelect, root, startedAt}
       if (event.code.startsWith('Arrow')) event.preventDefault();
     };
     const up = event => input.current.keys.delete(event.code);
-    const clear = () => input.current.keys.clear();
+    const clear = () => { input.current.keys.clear(); input.current.stick=[0,0]; };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', clear);
-    return () => { clear(); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', clear); };
+    document.addEventListener('visibilitychange',clear);
+    return () => { clear(); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', clear); document.removeEventListener('visibilitychange',clear); };
   }, [state.mode]);
 
   useEffect(() => { root.dataset.mode = state.mode; if (state.mode !== 'dollhouse') setShow(null); }, [root, state.mode]);
@@ -191,7 +192,7 @@ function ArchitectureView({plan, glbUrl, manifestUrl, onSelect, root, startedAt}
           <>
             <ArchitecturePlan plan={plan} levelId={walker?.levelId ?? state.levelId} roomId={here} walker={walker} compact
               onSelectRoom={roomId => { if (roomId && stops.some(s => s.id === `room:${roomId}` && s.walk)) dispatch({type: 'stop', stopId: `room:${roomId}`}); }} />
-            <p className="arch-hud">{here ? plan.rooms.find(r => r.id === here).name : 'Outside'} · Drag to look, stick or W A S D to move, scroll to zoom, Shift to run</p>
+            <p className="arch-hud"><span>{here ? plan.rooms.find(r => r.id === here).name : 'Outside'}</span><span className="arch-walk-help">Drag to look, stick or W A S D to move, scroll to zoom, Shift to run</span><span className="arch-touch-help">Drag to look · Stick to move</span></p>
             <TouchStick input={input} />
           </>
         )}

@@ -214,8 +214,9 @@ export function InteriorScene({plan,model,authoredRooms,authoredFloors,walker,le
     return ()=>{for(const {mesh,geometry,material,map,color,normalMap,roughnessMap,normalScale} of originals){if(mesh.geometry!==geometry){mesh.geometry.dispose();mesh.geometry=geometry;}material.map=map;material.color.copy(color);material.normalMap=normalMap;material.roughnessMap=roughnessMap;material.normalScale=normalScale;material.needsUpdate=true;}};
   },[model,assets.plaster,assets.door]);
   useEffect(()=>{if(assets.ready)onSceneReady?.(true);return ()=>onSceneReady?.(false);},[assets.ready,onSceneReady]);
-  const nearby=rooms.filter(r=>!walker||r.levelId===walker.levelId).map(room=>({room,center:room.polygon.reduce((a,p)=>[a[0]+p[0]/room.polygon.length,a[1]+p[1]/room.polygon.length],[0,0])})).sort((a,b)=>walker?Math.hypot(a.center[0]-walker.x,a.center[1]-walker.y)-Math.hypot(b.center[0]-walker.x,b.center[1]-walker.y):0).slice(0,2);
-  return <group>
+  const centers=useMemo(()=>rooms.map(room=>({room,center:room.polygon.reduce((a,p)=>[a[0]+p[0]/room.polygon.length,a[1]+p[1]/room.polygon.length],[0,0])})),[rooms]);
+  const nearby=centers.filter(({room})=>!walker||room.levelId===walker.levelId).sort((a,b)=>walker?Math.hypot(a.center[0]-walker.x,a.center[1]-walker.y)-Math.hypot(b.center[0]-walker.x,b.center[1]-walker.y):0).slice(0,2);
+  const furnishings=useMemo(()=><group>
     {rooms.map(room=><group key={room.roomId}>
       {!authoredFloors?.has(room.roomId)&&<RoomFloor room={room} wood={assets.wood} tile={assets.tile}/>}
       {room.items.map((item,i)=><Furniture key={`${item.type}-${i}`} item={item} models={assets.models}/>)}
@@ -223,6 +224,9 @@ export function InteriorScene({plan,model,authoredRooms,authoredFloors,walker,le
     </group>)}
     {legacyUnstyled && <OpeningDetails plan={plan}/>}
     {legacyUnstyled && <Baseboards plan={plan}/>}
+  </group>,[rooms,authoredFloors,assets.wood,assets.tile,assets.models,legacyUnstyled,plan]);
+  return <group>
+    {furnishings}
     {nearby.map(({room,center},index)=>{const reach=Math.min(7,Math.max(2.5,...room.polygon.map(p=>Math.hypot(p[0]-center[0],p[1]-center[1])))+.3);return <pointLight key={index} position={[center[0],room.elevation+Math.min(room.height-.15,2.5),-center[1]]} intensity={8} distance={reach} decay={2} color="#fff3de"/>;})}
   </group>;
 }
