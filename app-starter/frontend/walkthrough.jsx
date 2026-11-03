@@ -4,9 +4,10 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Canvas, useFrame, useThree} from '@react-three/fiber';
 import {CameraControls, Html, Sky} from '@react-three/drei';
-import {Box3, Color, DoubleSide, Object3D, PCFSoftShadowMap, Plane, Sphere, Vector3} from 'three';
+import {Box3, Color, DoubleSide, Object3D, PCFShadowMap, Plane, Sphere, Vector3} from 'three';
 import {dragLook, groundHeight, levelTop, stepWalker, storeyLifts, storyFrame, unitCards} from './architecture-model.mjs';
-import {setSpaceShellVisible} from './architecture-loader.mjs';
+import {dollhouseMeshVisible, setSpaceShellVisible} from './architecture-loader.mjs';
+import {startWalkClock} from './walk-clock.mjs';
 import {InteriorScene} from './interior-scene.jsx';
 import {PhotoRenderer} from './photo-renderer.jsx';
 import {daylightEnvironment} from './daylight-environment.mjs';
@@ -39,8 +40,7 @@ function SceneState({model, index, mode, whole, levels, storeys, levelId, roomId
     const heights = new Map(storeys.map(s => [s.id, s.elevation]));
     const tinted = new Set([...(index.rooms.get(roomId) || []), ...(objectName ? [objectName] : [])]);
     for (const mesh of model.meshes) {
-      const height = heights.get(mesh.userData.levelId);
-      mesh.visible = mode === 'walk' || whole || height === undefined || height <= top + 1e-6;
+      mesh.visible = mode === 'walk' || whole || dollhouseMeshVisible(mesh, index, heights, top);
       setSpaceShellVisible(mesh,mode === 'walk');
       for (const material of [mesh.material].flat()) {
         if (!material.emissive) continue;
@@ -181,14 +181,15 @@ function Walk({pose, stops, worlds, levels, eyeHeight, input, memory, onWalker, 
   useEffect(() => {
     const canvas = gl.domElement;
     let last = null;
-    const down = event => { last = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); };
+    let pointerId = null;
+    const down = event => { if(pointerId!==null)return;pointerId=event.pointerId;last = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); };
     const move = event => {
-      if (!last) return;
+      if (!last || event.pointerId!==pointerId) return;
       const w = memory.current;
       Object.assign(w, dragLook(w, event.clientX - last[0], event.clientY - last[1], LOOK_SPEED));
       last = [event.clientX, event.clientY];
     };
-    const up = () => { last = null; };
+    const up = event => { if(event.pointerId===pointerId){last = null;pointerId=null;} };
     const wheel = event => {
       event.preventDefault();
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
@@ -200,12 +201,14 @@ function Walk({pose, stops, worlds, levels, eyeHeight, input, memory, onWalker, 
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('lostpointercapture', up);
     canvas.addEventListener('wheel', wheel, {passive: false});
     return () => {
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', up);
+      canvas.removeEventListener('lostpointercapture', up);
       canvas.removeEventListener('wheel', wheel);
     };
   }, [gl, camera, memory]);
@@ -229,22 +232,53 @@ function Walk({pose, stops, worlds, levels, eyeHeight, input, memory, onWalker, 
     s.frames += 1;
     if (!s.since) s.since = now;
     if (now - s.since >= 1) { onFps(s.frames / (now - s.since)); s.frames = 0; s.since = now; }
-    if (now - s.reported > 0.1) { s.reported = now; onWalker({x: w.x, y: -w.z, yaw: w.yaw, levelId: levelUnder(w.feet).id}); }
+    if (now - s.reported > 0.1 && (s.x !== w.x || s.z !== w.z || s.yaw !== w.yaw || s.feet !== w.feet)) {
+      Object.assign(s,{reported:now,x:w.x,z:w.z,yaw:w.yaw,feet:w.feet});
+      onWalker({x: w.x, y: -w.z, yaw: w.yaw, levelId: levelUnder(w.feet).id});
+    }
   });
   return null;
 }
 
-// Walk renders on a steady 30 fps clock instead of every display refresh: half the GPU
-// work of a 60 Hz loop, and a frame is never drawn half a pose behind the last one.
+// Follow display refresh and stop spending GPU time in a background tab.
 function WalkFrameClock({active}) {
   const advance = useThree(state => state.advance);
   useEffect(() => {
     if (!active) return;
-    const tick = () => advance(performance.now());
-    tick();
-    const id = setInterval(tick, 1000 / 30);
-    return () => clearInterval(id);
+    return startWalkClock(advance,{document,requestAnimationFrame,cancelAnimationFrame});
   }, [active, advance]);
+  return null;
+}
+
+function WalkRenderBudget({active, sceneReady, levelId}) {
+  const {gl,setDpr,size}=useThree();
+  const samples=useRef({seconds:0,frames:0});
+  const compact=size.width<600 || window.matchMedia('(pointer: coarse)').matches;
+  useEffect(()=>{
+    setDpr(Math.min(window.devicePixelRatio,compact?1:1.5));
+    samples.current={seconds:0,frames:0};
+  },[compact,setDpr]);
+  useEffect(()=>{
+    // Architecture and furnishings are static. Rebuild shadows only after a
+    // mode/floor/assets change, never just because the camera moves.
+    const refresh=()=>{gl.shadowMap.autoUpdate=!active;gl.shadowMap.needsUpdate=true;};
+    refresh();
+    gl.domElement.addEventListener('webglcontextrestored',refresh);
+    return ()=>{gl.domElement.removeEventListener('webglcontextrestored',refresh);gl.shadowMap.autoUpdate=true;};
+  },[gl,active,sceneReady,levelId]);
+  useFrame((state,delta)=>{
+    if(!active||document.visibilityState!=='visible'||delta>.25)return;
+    const sample=samples.current;
+    sample.seconds+=delta;sample.frames++;
+    if(sample.seconds<2)return;
+    if(sample.frames/sample.seconds<45){
+      setDpr(Math.max(compact ? 0.65 : 0.75,state.viewport.dpr-.15));
+    }
+    sample.seconds=0;sample.frames=0;
+    gl.domElement.dataset.renderDpr=state.viewport.dpr.toFixed(2);
+    gl.domElement.dataset.drawCalls=String(gl.info.render.calls);
+    gl.domElement.dataset.triangles=String(gl.info.render.triangles);
+  });
   return null;
 }
 
@@ -313,10 +347,11 @@ export function Walkthrough({model, index, state, dispatch, stops, plan, storeys
   };
   return (
     <CanvasBoundary onError={onError}>
-      <Canvas key={canvasEpoch} shadows={state.mode === 'walk' && furnished ? {type:PCFSoftShadowMap} : false} frameloop={state.mode === 'walk' ? 'never' : 'demand'} dpr={[1, 1.5]} camera={{fov: 62, near: 0.05, far: 400, position: [14, 12, 14]}}
+      <Canvas key={canvasEpoch} shadows={state.mode === 'walk' && furnished ? {type:PCFShadowMap} : false} frameloop={state.mode === 'walk' ? 'never' : 'demand'} dpr={[1, 1.5]} camera={{fov: 62, near: 0.05, far: 400, position: [14, 12, 14]}}
         onPointerMissed={() => { if (state.mode === 'dollhouse') dispatch({type: 'select-room', roomId: null}); }}>
         <ContextGuard onLost={onContextLost} onRestored={onContextRestored} />
         <WalkFrameClock active={state.mode === 'walk'} />
+        <WalkRenderBudget active={state.mode === 'walk' && furnished} sceneReady={sceneReady} levelId={state.levelId} />
         <color attach="background" args={[night ? '#2a2c27' : '#e8e4dc']} />
         {state.mode === 'walk' && furnished && <InteriorEnvironment />}
         {state.mode === 'walk' && furnished && detailedLighting && sceneReady && <PhotoRenderer version={state.levelId} onFailure={onLightingFailure} />}
@@ -346,22 +381,29 @@ export function Walkthrough({model, index, state, dispatch, stops, plan, storeys
 // A thumb stick for touch screens: drag inside the ring to walk.
 export function TouchStick({input}) {
   const ref = useRef(null);
-  const [knob, setKnob] = useState([0, 0]);
+  const knob=useRef(null),pointer=useRef(null);
   const update = event => {
     const box = ref.current.getBoundingClientRect(), r = box.width / 2;
     let x = (event.clientX - box.left - r) / r, y = (event.clientY - box.top - r) / r;
     const d = Math.hypot(x, y);
     if (d > 1) { x /= d; y /= d; }
     input.current.stick = [x, y];
-    setKnob([x, y]);
+    knob.current.style.transform=`translate(${x*box.width*.3}px, ${y*box.width*.3}px)`;
   };
-  const release = () => { input.current.stick = [0, 0]; setKnob([0, 0]); };
+  const release = () => { pointer.current=null;input.current.stick = [0, 0]; knob.current.style.transform='translate(0,0)'; };
+  useEffect(()=>{
+    window.addEventListener('blur',release);
+    document.addEventListener('visibilitychange',release);
+    return ()=>{input.current.stick=[0,0];window.removeEventListener('blur',release);document.removeEventListener('visibilitychange',release);};
+  },[input]);
   return (
     <div ref={ref} className="arch-stick" role="presentation"
-      onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); update(event); }}
-      onPointerMove={event => { if (event.buttons || event.pointerType === 'touch') update(event); }}
-      onPointerUp={release} onPointerCancel={release}>
-      <span style={{transform: `translate(${knob[0] * 32}px, ${knob[1] * 32}px)`}} />
+      onPointerDown={event => { if(pointer.current!==null)return;pointer.current=event.pointerId;event.currentTarget.setPointerCapture(event.pointerId); update(event); }}
+      onPointerMove={event => { if(event.pointerId===pointer.current)update(event); }}
+      onPointerUp={event=>{if(event.pointerId===pointer.current)release();}}
+      onPointerCancel={event=>{if(event.pointerId===pointer.current)release();}}
+      onLostPointerCapture={event=>{if(event.pointerId===pointer.current)release();}}>
+      <span ref={knob} />
     </div>
   );
 }

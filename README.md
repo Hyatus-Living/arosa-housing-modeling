@@ -19,7 +19,7 @@ Node 24 is expected. Install dependencies first (`npm install`): `@meta-sam/pars
 ## What needs a host
 
 - `acres-research/meta.mjs` (Muse Spark research) imports six host modules for tools, prompt context, run shaping, and abort composition. Minimal stubs sit beside it so the contract is readable; see `acres-research/host-stubs.md`. Executing research means implementing that interface or running inside Arosa's research service.
-- The React viewers (`app-starter/frontend/`) need the application shell: React 19, three, @react-three/fiber and drei, camera-controls, three-mesh-bvh, plus project authorization, a saved concept to capture, and the project-scoped API routes the visual workbench calls. They are included as the exact shipped source, not a standalone app.
+- The React viewers (`app-starter/frontend/`) need the application shell: React 19, three, @react-three/fiber and drei, camera-controls, three-mesh-bvh, plus project authorization, a saved concept to capture, and the project-scoped API routes the visual workbench calls. The viewer modules reflect the event-window walkthrough updates through source revision `88f03fb`; the application shell and its styles are not included, so this is not a standalone app.
 - `planning/model_intake.py` imports and exports IFC through Bonsai (IfcOpenShell); see `LICENSES.md` for its GPL terms. Python dependencies are the host's to install.
 
 ## Samples

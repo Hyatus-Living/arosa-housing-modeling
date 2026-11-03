@@ -1,8 +1,17 @@
-import {DoubleSide} from 'three';
+import {Box3, DoubleSide} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {collisionWorld, worldTriangles} from './architecture-model.mjs';
 
 const DEFAULT_FINISH={wall:'#eeeae3',slab:'#bcb5aa',door:'#b49c82',window:'#bdd4dc'};
+
+export function dollhouseMeshVisible(mesh,index,storeyHeights,floorElevation) {
+  const height=storeyHeights.get(mesh.userData.levelId);
+  if(height!==undefined&&height>floorElevation+1e-6)return false;
+  // IFC roofs can be IfcSlab elements on the same storey as its floor. Remove the
+  // overhead slab by its geometry, without relying on a name or hiding the floor.
+  return index.objects.get(mesh.userData.node)?.kind!=='slab'||
+    new Box3().setFromObject(mesh).min.y<=floorElevation+0.35;
+}
 
 export function setSpaceShellVisible(mesh,walking) {
   if(!mesh.userData.spaceShell)return;

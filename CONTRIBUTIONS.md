@@ -58,3 +58,7 @@ Method: a path absent from the baseline tree is new in the window; a baseline pa
 | `samples/sample-manifest.json` | extraction-only (authored for this package) |  |  |
 | `samples/sample-plan.json` | extraction-only (authored for this package) |  |  |
 | `samples/sample.glb` | extraction-only (authored for this package) |  |  |
+
+## Later hackathon walkthrough updates
+
+The public viewer source includes the event-window walkthrough fixes merged as source revisions `f9ff5bf` (clock timing and visible dollhouse interiors) and `88f03fb` (interactive performance and touch controls). `app-starter/frontend/walk-clock.mjs` and its standalone lifecycle test were added in this update. The product shell and its styles are not included; see README for the host requirements.
